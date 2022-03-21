@@ -2,14 +2,20 @@
 
 pub use pallet::*;
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
 	use frame_support::{
 		sp_runtime::traits::Hash,
-		traits::{ Randomness, Currency, tokens::ExistenceRequirement },
-		transactional
+		traits::{Randomness, Currency, tokens::ExistenceRequirement},
+		transactional,
 	};
 	use sp_io::hashing::blake2_128;
 	use scale_info::TypeInfo;
@@ -18,22 +24,37 @@ pub mod pallet {
 
 	#[cfg(feature = "std")]
 	use frame_support::serde::{Deserialize, Serialize};
+	use sp_core::sp_std;
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
 	type BalanceOf<T> =
-		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+	<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 
 	// Struct for holding Kitty information.
-	#[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+	#[derive(Clone, Encode, Decode, PartialEq, TypeInfo, MaxEncodedLen)]
 	#[scale_info(skip_type_params(T))]
 	#[codec(mel_bound())]
 	pub struct Kitty<T: Config> {
-		pub dna: [u8; 16],   // Using 16 bytes to represent a kitty DNA
+		pub dna: [u8; 16],
+		// Using 16 bytes to represent a kitty DNA
 		pub price: Option<BalanceOf<T>>,
 		pub gender: Gender,
 		pub owner: AccountOf<T>,
 		pub date_created: u64,
 	}
+
+	impl <T: Config> sp_std::fmt::Debug for Kitty<T> {
+		fn fmt(&self, f: &mut sp_std::fmt::Formatter<'_>) -> sp_std::fmt::Result {
+			f.debug_struct("Point")
+				.field("dna", &self.dna)
+				.field("price", &self.price)
+				.field("gender", &self.gender)
+				.field("owner", &self.owner)
+				.field("date_created", &self.date_created)
+				.finish()
+		}
+	}
+
 
 	// Enum declaration for Gender.
 	#[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
@@ -43,9 +64,9 @@ pub mod pallet {
 		Female,
 	}
 
-    #[pallet::pallet]
-    #[pallet::generate_store(pub(super) trait Store)]
-    pub struct Pallet<T>(_);
+	#[pallet::pallet]
+	#[pallet::generate_store(pub (super) trait Store)]
+	pub struct Pallet<T>(_);
 
 	/// Configure the pallet by specifying the parameters and types it depends on.
 	#[pallet::config]
@@ -93,7 +114,7 @@ pub mod pallet {
 
 	// Events.
 	#[pallet::event]
-	#[pallet::generate_deposit(pub(super) fn deposit_event)]
+	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		/// A new Kitty was successfully created. \[sender, kitty_id\]
 		Created(T::AccountId, T::Hash),
@@ -121,7 +142,7 @@ pub mod pallet {
 	#[pallet::getter(fn kitties_owned)]
 	/// Keeps track of what accounts own what Kitty.
 	pub(super) type KittiesOwned<T: Config> =
-		StorageMap<_, Twox64Concat, T::AccountId, BoundedVec<T::Hash, T::MaxKittyOwned>, ValueQuery>;
+	StorageMap<_, Twox64Concat, T::AccountId, BoundedVec<T::Hash, T::MaxKittyOwned>, ValueQuery>;
 
 	// Our pallet's genesis configuration.
 	#[pallet::genesis_config]
@@ -179,7 +200,7 @@ pub mod pallet {
 		pub fn set_price(
 			origin: OriginFor<T>,
 			kitty_id: T::Hash,
-			new_price: Option<BalanceOf<T>>
+			new_price: Option<BalanceOf<T>>,
 		) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
 
@@ -205,7 +226,7 @@ pub mod pallet {
 		pub fn transfer(
 			origin: OriginFor<T>,
 			to: T::AccountId,
-			kitty_id: T::Hash
+			kitty_id: T::Hash,
 		) -> DispatchResult {
 			let from = ensure_signed(origin)?;
 
@@ -236,7 +257,7 @@ pub mod pallet {
 		pub fn buy_kitty(
 			origin: OriginFor<T>,
 			kitty_id: T::Hash,
-			bid_price: BalanceOf<T>
+			bid_price: BalanceOf<T>,
 		) -> DispatchResult {
 			let buyer = ensure_signed(origin)?;
 
@@ -279,7 +300,7 @@ pub mod pallet {
 		pub fn breed_kitty(
 			origin: OriginFor<T>,
 			parent1: T::Hash,
-			parent2: T::Hash
+			parent2: T::Hash,
 		) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
 
@@ -339,6 +360,8 @@ pub mod pallet {
 				date_created: T::TimeProvider::now().as_secs(),
 			};
 
+			log::info!("A kitty is born with ID: {:?}.", kitty);
+
 			let kitty_id = T::Hashing::hash_of(&kitty);
 
 			// Performs this operation first as it may fail
@@ -347,7 +370,7 @@ pub mod pallet {
 
 			// Check if the kitty does not already exist in our storage map
 			ensure!(Self::kitties(&kitty_id) == None, <Error<T>>::KittyExists);
-			
+
 			// Performs this operation first because as it may fail
 			<KittiesOwned<T>>::try_mutate(&owner, |kitty_vec| {
 				kitty_vec.try_push(kitty_id)
